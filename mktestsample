@@ -53,6 +53,9 @@ def main():
         elif fname.endswith(".grib"):
             from mktestsamplelib.min_grib import MinimizeGRIB
             minimizer = MinimizeGRIB(fname)
+        elif fname.endswith(".jpg") or fname.endswith(".jpeg"):
+            from mktestsamplelib.min_jpeg import MinimizeJPEG
+            minimizer = MinimizeJPEG(fname)
         else:
             log.warning("%s: file name has an unknown/unsupported extension: skipped", fname)
             continue
