@@ -1,32 +1,10 @@
 #!/usr/bin/python3
 
-# In case we are going to need to minimize GRIBs preserving some aspects of the
-# data, tip from @dcesari:
-#
-# Non so se può servire, il comando di libsim:
-#
-# vg6d_transform [--trans-mode=s] --trans-type=boxregrid --sub-type=average \
-#  --npx=4 --npy=4 gribin gribout
-#
-# trasforma un grib facendo la media su blocchi di 4x4 punti (ovviamente si
-# possono usare altri valori), per cui può essere utile per ridurre la
-# risoluzione e quindi le dimensioni di un messaggio senza ridurne
-# significativamente l'area geografica e mantenendo un contenuto informativo
-# ragionevole, nel caso serva avere dei numeri veri che occupano poco spazio.
-
 from __future__ import annotations
 import argparse
-import contextlib
-import io
 import logging
-import os
 import sys
-import tempfile
-from typing import List
 
-import arkimet
-import eccodes
-import numpy
 try:
     import coloredlogs
 except ModuleNotFoundError:
@@ -38,130 +16,6 @@ log = logging.getLogger("minimize")
 
 class Fail(Exception):
     pass
-
-
-@contextlib.contextmanager
-def edit_grib(fname: str):
-    gid = None
-    try:
-        # Note: eccodes expects only file objects, not file-like objects
-        with open(fname, "rb") as infd:
-            gid = eccodes.codes_grib_new_from_file(infd)
-
-        yield gid
-
-        # Rewrite edited file
-        with open(fname, "wb") as outfd:
-            eccodes.codes_write(gid, outfd)
-    finally:
-        if gid is not None:
-            eccodes.codes_release(gid)
-
-
-def minimize_grib(data: bytes) -> bytes:
-    """
-    Given GRIB data, return its version after setting values to all zeroes
-    """
-    # Access data with eccodes
-    with tempfile.NamedTemporaryFile("wb") as fd:
-        # Write out the data so eccodes can load it
-        fd.write(data)
-        fd.flush()
-
-        # Set data to an array of zeroes
-        with edit_grib(fd.name) as gid:
-            values = eccodes.codes_get_values(gid)
-            zeros = numpy.zeros(values.shape)
-            eccodes.codes_set_values(gid, zeros)
-
-        # Reread data
-        with open(fd.name, "rb") as infd:
-            return infd.read()
-
-
-def minimize_arkimet(fname: str, idx: int, md: arkimet.Metadata) -> bytes:
-    """
-    Given an Arkimet metadata, return its serialized version after minimizing
-    the GRIB data in it
-    """
-    # Get data
-    data = md.data
-
-    # Replace its values with zeroes
-    minimized = minimize_grib(data)
-
-    # Check if result is smaller than original.
-    # If smaller, overwrite; else, leave as is.
-    if len(minimized) < len(data):
-        log.info("%s:%d: GRIB minimized: %db → %db", fname, idx, len(data), len(minimized))
-
-        # Replace data size size in inline metadata
-        source = md.to_python("source")
-        source["size"] = len(minimized)
-        md["source"] = source
-
-        # Serialize the new metadata + data
-        with io.BytesIO() as tf:
-            # Note:
-            #
-            # There is no way to replace data in an arkimet metadata and it
-            # makes sense, since for arkimet data is immutable. The kind of
-            # mangling we do here is not something to have in arkimet, as it
-            # breaks its invariants.
-            #
-            # We can work around this with knowledge of the arkimet metadata
-            # stream. When using inline data, arkimet simply serializes the
-            # metadata, and then adds source.size bytes of data.
-            #
-            # We can then:
-            #  1. write out the modified metadata, with a special request to
-            #     skip writing the data afterwards
-            #  2. Append our own data
-
-            # Write the new metadata followed by the original data
-            md.write(tf, skip_data=True)
-
-            # Write the new data
-            tf.write(minimized)
-
-            # Read the contents of the new file
-            return tf.getvalue()
-    else:
-        # Serialize the old data, unchanged
-        with io.BytesIO() as tf:
-            md.write(tf)
-            return tf.getvalue()
-
-
-def minimize_file(fname: str):
-    log.debug("%s: minimizing file", fname)
-    orig_st = os.stat(fname)
-    orig_size = orig_st.st_size
-
-    # Read arkimet metadata
-    with open(fname, "rb") as fd:
-        mds = arkimet.Metadata.read_bundle(fd, pathname=fname)
-
-    # Minimize storing the resulting binary chunks in a list
-    new_contents: List[bytes] = []
-    for idx, md in enumerate(mds, start=1):
-        log.debug("%s:%d: minimizing data", fname, idx)
-        new_contents.append(minimize_arkimet(fname, idx, md))
-
-    # If everthing went well so far, we can rewrite the original file
-    new_size = sum(len(c) for c in new_contents)
-    if orig_size == new_size:
-        log.info("%s: size unchanged: leaving original file unchanged", fname)
-    elif orig_size < new_size:
-        log.error("%s: minimized size would go from %db to %db: bug? Leaving original file unchanged",
-                  fname, orig_size, new_size)
-    else:
-        log.info("%s: size went from %db to %db", fname, orig_size, new_size)
-        with open(fname, "wb") as fd:
-            for c in new_contents:
-                fd.write(c)
-        # Restore original modification times
-        os.utime(fname, ns=(orig_st.st_atime_ns, orig_st.st_mtime_ns))
 
 
 def main():
@@ -188,10 +42,15 @@ def main():
         logging.basicConfig(level=log_level, stream=sys.stderr, format=FORMAT)
 
     for fname in args.files:
-        if not fname.endswith(".arkimet"):
-            log.warning("%s: file name does not end in .arkimet: skipped", fname)
+        if fname.endswith(".arkimet"):
+            from mktestsamplelib.arkimet import MinimizeArkimet
+            MinimizeArkimet(fname).minimize()
+        elif fname.endswith(".grib"):
+            from mktestsample.grib import MinimizeGRIB
+            MinimizeGRIB(fname).minimize()
+        else:
+            log.warning("%s: file name has an unknown/unsupported extension: skipped", fname)
             continue
-        minimize_file(fname)
 
 
 if __name__ == "__main__":
