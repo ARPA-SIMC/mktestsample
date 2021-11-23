@@ -3,7 +3,7 @@ import io
 import logging
 from typing import TYPE_CHECKING, List
 
-from . import grib, common
+from . import min_grib, common
 
 if TYPE_CHECKING:
     import arkimet
@@ -19,13 +19,18 @@ def minimize_arkimet(fname: str, idx: int, md: "arkimet.Metadata") -> bytes:
     # Get data
     data = md.data
 
-    # Replace its values with zeroes
-    minimized = grib.minimize_grib_message(data)
+    fmt = md.to_python("source")["format"]
+    if fmt == "grib":
+        # Replace its values with zeroes
+        minimized = min_grib.minimize_grib_message(data)
+    else:
+        log.info("%s:%d: unknown/unsupported format %s: leaving as it is", fname, idx)
+        minimized = md.data
 
     # Check if result is smaller than original.
     # If smaller, overwrite; else, leave as is.
     if len(minimized) < len(data):
-        log.info("%s:%d: GRIB minimized: %db → %db", fname, idx, len(data), len(minimized))
+        log.debug("%s:%d: GRIB minimized: %db → %db", fname, idx, len(data), len(minimized))
 
         # Replace data size size in inline metadata
         source = md.to_python("source")
@@ -67,6 +72,9 @@ def minimize_arkimet(fname: str, idx: int, md: "arkimet.Metadata") -> bytes:
 
 class MinimizeArkimet(common.MinimizeFile):
     def make_new_contents(self) -> List[bytes]:
+        # Import here to avoid depending on arkimet for other unrelated features
+        import arkimet
+
         # Read arkimet metadata
         with open(self.fname, "rb") as fd:
             mds = arkimet.Metadata.read_bundle(fd, pathname=self.fname)

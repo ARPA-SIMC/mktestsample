@@ -62,6 +62,8 @@ def iter_grib_file(fd: BinaryIO) -> Sequence[int]:
 
     while True:
         gid = eccodes.codes_grib_new_from_file(fd)
+        if gid is None:
+            break
         try:
             yield gid
         finally:

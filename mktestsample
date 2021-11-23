@@ -19,11 +19,15 @@ class Fail(Exception):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Replace data in GRIB samples with zeroes")
+    parser = argparse.ArgumentParser(
+                description="Replace data in sample files with zeroes, to be"
+                            " used as test data without bloating code repositories")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="verbose output")
     parser.add_argument("--debug", action="store_true",
                         help="verbose output")
+    parser.add_argument("-c", "--check", action="store_true",
+                        help="don't replace files, only check what would be done")
     parser.add_argument("files", nargs="+",
                         help="files to minimize")
     args = parser.parse_args()
@@ -37,20 +41,25 @@ def main():
         log_level = logging.WARN
 
     if coloredlogs is not None:
-        coloredlogs.install(level=log_level, fmt=FORMAT, logger=log)
+        coloredlogs.install(level=log_level, fmt=FORMAT)
     else:
         logging.basicConfig(level=log_level, stream=sys.stderr, format=FORMAT)
 
     for fname in args.files:
+        minimizer = None
         if fname.endswith(".arkimet"):
-            from mktestsamplelib.arkimet import MinimizeArkimet
-            MinimizeArkimet(fname).minimize()
+            from mktestsamplelib.min_arkimet import MinimizeArkimet
+            minimizer = MinimizeArkimet(fname)
         elif fname.endswith(".grib"):
-            from mktestsample.grib import MinimizeGRIB
-            MinimizeGRIB(fname).minimize()
+            from mktestsamplelib.min_grib import MinimizeGRIB
+            minimizer = MinimizeGRIB(fname)
         else:
             log.warning("%s: file name has an unknown/unsupported extension: skipped", fname)
             continue
+        if args.check:
+            minimizer.check()
+        else:
+            minimizer.minimize()
 
 
 if __name__ == "__main__":
