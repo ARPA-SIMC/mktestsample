@@ -14,7 +14,6 @@
 # significativamente l'area geografica e mantenendo un contenuto informativo
 # ragionevole, nel caso serva avere dei numeri veri che occupano poco spazio.
 
-
 from __future__ import annotations
 import argparse
 import contextlib
