@@ -35,6 +35,10 @@ class MinimizeFile:
                 from .min_jpeg import MinimizeJPEG
 
                 return MinimizeJPEG(path)
+            case ".nc" | ".netcdf":
+                from .min_netcdf import MinimizeNetCDF
+
+                return MinimizeNetCDF(path)
             case _:
                 return None
 
