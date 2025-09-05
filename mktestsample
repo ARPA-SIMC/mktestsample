@@ -1,64 +1,72 @@
 #!/usr/bin/python3
 
-from __future__ import annotations
 import argparse
 import logging
 import sys
+from pathlib import Path
+from typing import Any
 
-try:
-    import coloredlogs
-except ModuleNotFoundError:
-    coloredlogs = None
+from rich.logging import RichHandler
 
+from mktestsamplelib.common import MinimizeFile, BackendUnavailable
 
 log = logging.getLogger("minimize")
 
 
 class Fail(Exception):
-    pass
+    """Exception raised to show the user an error message."""
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
-                description="Replace data in sample files with zeroes, to be"
-                            " used as test data without bloating code repositories")
-    parser.add_argument("-v", "--verbose", action="store_true",
-                        help="verbose output")
-    parser.add_argument("--debug", action="store_true",
-                        help="verbose output")
-    parser.add_argument("-c", "--check", action="store_true",
-                        help="don't replace files, only check what would be done")
-    parser.add_argument("files", nargs="+",
-                        help="files to minimize")
+        description="Replace data in sample files with zeroes, to be"
+        " used as test data without bloating code repositories"
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="verbose output"
+    )
+    parser.add_argument("--debug", action="store_true", help="verbose output")
+    parser.add_argument(
+        "-c",
+        "--check",
+        action="store_true",
+        help="don't replace files, only check what would be done",
+    )
+    parser.add_argument("files", nargs="+", type=Path, help="files to minimize")
     args = parser.parse_args()
 
-    FORMAT = "%(asctime)-15s %(levelname)s %(name)s %(message)s"
+    FORMAT = "%(message)s"
+    handler_args: dict[str, Any] = {}
     if args.debug:
         log_level = logging.DEBUG
     elif args.verbose:
         log_level = logging.INFO
+        handler_args["show_path"] = False
+        handler_args["show_time"] = False
     else:
         log_level = logging.WARN
+        handler_args["show_path"] = False
+        handler_args["show_time"] = False
 
-    if coloredlogs is not None:
-        coloredlogs.install(level=log_level, fmt=FORMAT)
-    else:
-        logging.basicConfig(level=log_level, stream=sys.stderr, format=FORMAT)
+    logging.basicConfig(
+        level=log_level,
+        format=FORMAT,
+        datefmt="[%X]",
+        handlers=[RichHandler(**handler_args)],
+    )
 
-    for fname in args.files:
-        minimizer = None
-        if fname.endswith(".arkimet"):
-            from mktestsamplelib.min_arkimet import MinimizeArkimet
-            minimizer = MinimizeArkimet(fname)
-        elif fname.endswith(".grib"):
-            from mktestsamplelib.min_grib import MinimizeGRIB
-            minimizer = MinimizeGRIB(fname)
-        elif fname.endswith(".jpg") or fname.endswith(".jpeg"):
-            from mktestsamplelib.min_jpeg import MinimizeJPEG
-            minimizer = MinimizeJPEG(fname)
-        else:
-            log.warning("%s: file name has an unknown/unsupported extension: skipped", fname)
+    for path in args.files:
+        try:
+            if (minimizer := MinimizeFile.for_path(path)) is None:
+                log.warning(
+                    "%s: file name has an unknown/unsupported extension: skipped",
+                    path,
+                )
+                continue
+        except BackendUnavailable as e:
+            log.warning("%s: minimizer backend is not available: skipped", path)
             continue
+
         if args.check:
             minimizer.check()
         else:
@@ -67,7 +75,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        sys.exit(main())
+        main()
     except Fail as e:
         print(e, file=sys.stderr)
         sys.exit(1)

@@ -1,6 +1,6 @@
-from __future__ import annotations
 import io
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, List
 
 from . import min_grib, common
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("arkimet")
 
 
-def minimize_arkimet(fname: str, idx: int, md: "arkimet.Metadata") -> bytes:
+def minimize_arkimet(path: Path, idx: int, md: "arkimet.Metadata") -> bytes:
     """
     Given an Arkimet metadata, return its serialized version after minimizing
     the GRIB data in it
@@ -24,13 +24,24 @@ def minimize_arkimet(fname: str, idx: int, md: "arkimet.Metadata") -> bytes:
         # Replace its values with zeroes
         minimized = min_grib.minimize_grib_message(data)
     else:
-        log.info("%s:%d: unknown/unsupported format %s: leaving as it is", fname, idx)
+        log.info(
+            "%s:%d: unknown/unsupported format %s: leaving as it is",
+            path,
+            idx,
+            fmt,
+        )
         minimized = md.data
 
     # Check if result is smaller than original.
     # If smaller, overwrite; else, leave as is.
     if len(minimized) < len(data):
-        log.debug("%s:%d: GRIB minimized: %db → %db", fname, idx, len(data), len(minimized))
+        log.debug(
+            "%s:%d: GRIB minimized: %db → %db",
+            path,
+            idx,
+            len(data),
+            len(minimized),
+        )
 
         # Replace data size size in inline metadata
         source = md.to_python("source")
@@ -71,18 +82,27 @@ def minimize_arkimet(fname: str, idx: int, md: "arkimet.Metadata") -> bytes:
 
 
 class MinimizeArkimet(common.MinimizeFile):
+    def __init__(self, path: Path) -> None:
+        super().__init__(path)
+        try:
+            __import__("arkimet")
+        except ModuleNotFoundError:
+            raise common.BackendUnavailable(
+                "arkimet python module is not installed"
+            )
+
     def make_new_contents(self) -> List[bytes]:
         # Import here to avoid depending on arkimet for other unrelated features
         import arkimet
 
         # Read arkimet metadata
-        with open(self.fname, "rb") as fd:
-            mds = arkimet.Metadata.read_bundle(fd, pathname=self.fname)
+        with self.path.open("rb") as fd:
+            mds = arkimet.Metadata.read_bundle(fd, pathname=self.path)
 
         # Minimize storing the resulting binary chunks in a list
         new_contents: List[bytes] = []
         for idx, md in enumerate(mds, start=1):
-            log.debug("%s:%d: minimizing data", self.fname, idx)
-            new_contents.append(minimize_arkimet(self.fname, idx, md))
+            log.debug("%s:%d: minimizing data", self.path, idx)
+            new_contents.append(minimize_arkimet(self.path, idx, md))
 
         return new_contents

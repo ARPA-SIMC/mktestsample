@@ -1,9 +1,13 @@
-from __future__ import annotations
 import logging
 import os
+from pathlib import Path
 from typing import List, Optional
 
 log = logging.getLogger("common")
+
+
+class BackendUnavailable(Exception):
+    """Excpetion raised when a minimizer backend is not installed."""
 
 
 class MinimizeFile:
@@ -11,9 +15,28 @@ class MinimizeFile:
     Base class for format-dependent file minimization implementations.
     """
 
-    def __init__(self, fname: str):
-        self.fname = fname
-        self.orig_st = os.stat(self.fname)
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.orig_st = self.path.stat()
+
+    @classmethod
+    def for_path(cls, path: Path) -> Optional["MinimizeFile"]:
+        """Instantiate a MinimizeFile for a Path."""
+        match path.suffix:
+            case ".arkimet":
+                from .min_arkimet import MinimizeArkimet
+
+                return MinimizeArkimet(path)
+            case ".grib":
+                from .min_grib import MinimizeGRIB
+
+                return MinimizeGRIB(path)
+            case ".jpg" | ".jpeg":
+                from .min_jpeg import MinimizeJPEG
+
+                return MinimizeJPEG(path)
+            case _:
+                return None
 
     def compute(self) -> Optional[List[bytes]]:
         """
@@ -21,7 +44,7 @@ class MinimizeFile:
 
         If the return value is None, it means no minimization happened.
         """
-        log.debug("%s: minimizing file", self.fname)
+        log.debug("%s: minimizing file", self.path)
         orig_size = self.orig_st.st_size
 
         # Read arkimet metadata
@@ -30,29 +53,42 @@ class MinimizeFile:
         # If everthing went well so far, we can rewrite the original file
         new_size = sum(len(c) for c in new_contents)
         if orig_size == new_size:
-            log.info("%s: size unchanged: leaving original file unchanged", self.fname)
+            log.info(
+                "%s: size unchanged: leaving original file unchanged",
+                self.path,
+            )
             return None
         elif orig_size < new_size:
-            log.error("%s: minimized size would go from %db to %db: bug? Leaving original file unchanged",
-                      self.fname, orig_size, new_size)
+            log.error(
+                "%s: minimized size would go from %db to %db: bug?"
+                " Leaving original file unchanged",
+                self.path,
+                orig_size,
+                new_size,
+            )
             return None
         else:
-            log.info("%s: size went from %db to %db", self.fname, orig_size, new_size)
+            log.info(
+                "%s: size went from %db to %db", self.path, orig_size, new_size
+            )
             return new_contents
 
     def write(self, new_contents: List[bytes]):
         """
         Replace the file with its new contents
         """
-        with open(self.fname, "wb") as fd:
+        with open(self.path, "wb") as fd:
             for c in new_contents:
                 fd.write(c)
         # Restore original modification times
-        os.utime(self.fname, ns=(self.orig_st.st_atime_ns, self.orig_st.st_mtime_ns))
+        os.utime(
+            self.path, ns=(self.orig_st.st_atime_ns, self.orig_st.st_mtime_ns)
+        )
 
     def minimize(self):
         """
-        Scan the file, and if the minimized contents are smaller than its current size, replace it
+        Scan the file, and if the minimized contents are smaller than its
+        current size, replace it
         """
         new_contents = self.compute()
         if new_contents is not None:
@@ -68,4 +104,6 @@ class MinimizeFile:
         """
         Calculate the new, minimized contents for the file
         """
-        raise NotImplementedError(f"{self.__class__}.make_new_contents() not implemented")
+        raise NotImplementedError(
+            f"{self.__class__}.make_new_contents() not implemented"
+        )

@@ -1,0 +1,16 @@
+[tool.black]
+line-length = 80
+
+[tool.pylint.'MESSAGES CONTROL']
+disable = "invalid-name,too-many-instance-attributes,too-many-locals,missing-function-docstring,too-many-arguments,import-outside-toplevel"
+
+[tool.pylint.MAIN]
+max-line-length = 80
+
+[tool.mypy]
+# mypy_path = "stubs"
+# 
+# plugins = [
+#     "numpy.typing.mypy_plugin",
+#     "pydantic.mypy",
+# ]

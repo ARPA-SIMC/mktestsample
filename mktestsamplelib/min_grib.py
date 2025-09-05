@@ -1,6 +1,6 @@
 from __future__ import annotations
 import logging
-from typing import BinaryIO, Sequence, List
+from typing import BinaryIO, List, Generator
 
 from . import common
 
@@ -50,7 +50,7 @@ def minimize_grib_message(data: bytes) -> bytes:
         eccodes.codes_release(gid)
 
 
-def iter_grib_file(fd: BinaryIO) -> Sequence[int]:
+def iter_grib_file(fd: BinaryIO) -> Generator[int, None, None]:
     """
     Iterate the contents of a GRIB file, returning eccodes gids for each GRIB
     in the file.
@@ -77,7 +77,7 @@ class MinimizeGRIB(common.MinimizeFile):
 
         # Read GRIB contents, computing minified versions
         new_contents = []
-        with open(self.fname, "rb") as fd:
+        with self.path.open("rb") as fd:
             for gid in iter_grib_file(fd):
                 replace_data(gid)
                 new_contents.append(eccodes.codes_get_message(gid))
