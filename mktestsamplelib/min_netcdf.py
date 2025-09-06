@@ -12,17 +12,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("arkimet")
 
-#     # Check if result is smaller than original.
-#     # If smaller, overwrite; else, leave as is.
-#     if len(minimized) < len(data):
-#         log.debug(
-#             "%s:%d: GRIB minimized: %db → %db",
-#             path,
-#             idx,
-#             len(data),
-#             len(minimized),
-#         )
-
 
 class MinimizeNetCDF(common.MinimizeFile):
     def __init__(self, path: Path) -> None:
@@ -81,6 +70,8 @@ class MinimizeNetCDF(common.MinimizeFile):
         log.debug("%s: checking dataset %s", self.path, dataset.name)
         for name, var in dataset.variables.items():
             if not var.shape:
+                continue
+            if var.name in ("time",):
                 continue
             fill = var.get_fill_value()
             var[:] = fill
